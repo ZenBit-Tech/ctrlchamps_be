@@ -31,6 +31,7 @@ import { VirtualAssessment } from './common/entities/virtual-assessment.entity';
 import { WorkExperience } from './common/entities/work-experience.entity';
 import { AuthModule } from './modules/auth/auth.module';
 import { EmailModule } from './modules/email/email.module';
+import { PaymentModule } from './modules/payment/payment.module';
 import { ProfileModule } from './modules/profile/profile.module';
 import { UserModule } from './modules/users/user.module';
 import { VirtualAssessmentModule } from './modules/virtual-assessment/virtual-assessment.module';
@@ -82,6 +83,7 @@ import { VirtualAssessmentModule } from './modules/virtual-assessment/virtual-as
     ProfileModule,
     CaregiverInfoModule,
     VirtualAssessmentModule,
+    PaymentModule,
   ],
   controllers: [AppController],
   providers: [AppService, SeedingService],
