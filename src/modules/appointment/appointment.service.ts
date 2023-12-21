@@ -276,6 +276,8 @@ export class AppointmentService {
 
         .leftJoinAndSelect('appointment.virtualAssessment', 'virtualAssessment')
 
+        .leftJoinAndSelect('appointment.activityLog', 'activityLog')
+
         .where('appointment.id = :appointmentId', { appointmentId })
 
         .getOne();
@@ -422,6 +424,19 @@ export class AppointmentService {
         return this.caregiverAppointmentRequestRejectTemplateId;
       default:
         return '';
+    }
+  }
+
+  async findAll(): Promise<Appointment[]> {
+    try {
+      return await this.appointmentRepository
+        .createQueryBuilder('appointment')
+        .getMany();
+    } catch (error) {
+      throw new HttpException(
+        ErrorMessage.InternalServerError,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
