@@ -1,27 +1,38 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
+import { format, getDay, differenceInWeeks } from 'date-fns';
+import { ActivityLog } from 'src/common/entities/activity-log.entity';
 import { Appointment } from 'src/common/entities/appointment.entity';
 import { ErrorMessage } from 'src/common/enums/error-message.enum';
 import { EntityManager, Repository } from 'typeorm';
 
+import { ActivityLogStatus } from '../activity-log/enums/activity-log-status.enum';
 import { MINIMUM_BALANCE } from '../appointment/appointment.constants';
+import { AppointmentStatus } from '../appointment/enums/appointment-status.enum';
 import { CaregiverInfoService } from '../caregiver-info/caregiver-info.service';
 import { UserService } from '../users/user.service';
+
+import { getHourDifference } from './helpers/difference-in-hours';
 
 @Injectable()
 export class PaymentService {
   constructor(
     @InjectRepository(Appointment)
     private readonly appointmentRepository: Repository<Appointment>,
+    @InjectRepository(ActivityLog)
+    private readonly activityLogRepository: Repository<ActivityLog>,
     private readonly userService: UserService,
     private readonly caregiverInfoService: CaregiverInfoService,
   ) {}
 
-  private async findAppointmentById(appointmentId): Promise<Appointment> {
-    const appointment = await this.appointmentRepository.findOne({
-      where: { id: appointmentId },
-    });
+  private async findAppointmentById(
+    appointmentId: string,
+  ): Promise<Appointment> {
+    const appointment = await this.appointmentRepository
+      .createQueryBuilder('appointment')
+      .where('appointment.id = :appointmentId', { appointmentId })
+      .getOne();
 
     return appointment;
   }
@@ -74,29 +85,25 @@ export class PaymentService {
     }
   }
 
-  public async payForCompletedAppointment(
+  private async payForCompletedOneTimeAppointment(
     appointmentId: string,
     transactionalEntityManager: EntityManager,
   ): Promise<void> {
     try {
-      // Находим appointment по appointmentId
       const appointment = await this.findAppointmentById(appointmentId);
 
       if (!appointment) {
         throw new HttpException('Appointment not found', HttpStatus.NOT_FOUND);
       }
 
-      // Вычисляем длину встречи в минутах
       const { startDate, endDate } = appointment;
-      const startTime = startDate.getTime();
-      const endTime = endDate.getTime();
-      const appointmentDuration = (endTime - startTime) / (1000 * 60 * 60);
-      console.log(`Длина аппоинтменента - ${appointmentDuration}`);
+      const appointmentDuration = getHourDifference(startDate, endDate);
 
-      // Получаем информацию о caregiver'е из appointment
       const { caregiverInfoId } = appointment;
       const caregiverInfo =
-        await this.caregiverInfoService.findById(caregiverInfoId);
+        await this.caregiverInfoService.findUserByCaregiverInfoId(
+          caregiverInfoId,
+        );
 
       if (!caregiverInfo) {
         throw new HttpException(
@@ -105,80 +112,218 @@ export class PaymentService {
         );
       }
 
-      // Вычисляем сумму для оплаты
-      const amountToPay = appointmentDuration * caregiverInfo.hourlyRate;
-      console.log(
-        `Need to pay ${amountToPay}, hour rate - ${caregiverInfo.hourlyRate}`,
-      );
+      const amountToPay = (appointmentDuration + 1) * caregiverInfo.hourlyRate;
 
-      // Получаем информацию о пользователе из appointment
       const { userId } = appointment;
-      const { balance, email } = await this.userService.findById(userId);
-      // Проверяем, достаточно ли у пользователя средств для оплаты
-      if (balance < amountToPay) {
+      const seeker = await this.userService.findById(userId);
+
+      if (seeker.balance < amountToPay) {
         throw new HttpException('Insufficient funds', HttpStatus.BAD_REQUEST);
       }
 
-      // Вычитаем сумму оплаты из баланса пользователя
-      const updatedBalance = balance - amountToPay;
+      const seekerUpdatedBalance = seeker.balance - amountToPay;
 
-      // Обновляем баланс пользователя
       await this.userService.updateWithTransaction(
-        email,
+        seeker.email,
         {
-          balance: updatedBalance,
+          balance: seekerUpdatedBalance,
         },
         transactionalEntityManager,
       );
 
-      console.log(
-        `Payment of ${amountToPay}$ successfully processed for appointment ${appointmentId}`,
+      const caregiverUpdatedBalance = caregiverInfo.user.balance + amountToPay;
+
+      await this.userService.updateWithTransaction(
+        caregiverInfo.user.email,
+        {
+          balance: caregiverUpdatedBalance,
+        },
+        transactionalEntityManager,
       );
     } catch (error) {
-      throw new Error(error);
+      if (
+        error instanceof HttpException &&
+        error.getStatus() === HttpStatus.BAD_REQUEST
+      ) {
+        throw error;
+      }
+
+      throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  private async payForCompletedRecurringAppointment(
+    appointmentId: string,
+    transactionalEntityManager: EntityManager,
+  ): Promise<void> {
+    try {
+      const appointment = await this.findAppointmentById(appointmentId);
+
+      if (!appointment) {
+        throw new HttpException('Appointment not found', HttpStatus.NOT_FOUND);
+      }
+
+      const { caregiverInfoId } = appointment;
+      const caregiverInfo =
+        await this.caregiverInfoService.findUserByCaregiverInfoId(
+          caregiverInfoId,
+        );
+
+      if (!caregiverInfo) {
+        throw new HttpException(
+          'Caregiver info not found',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      const { userId } = appointment;
+      const seeker = await this.userService.findById(userId);
+
+      const acceptedActivityLogs = await this.activityLogRepository
+        .createQueryBuilder('activityLog')
+        .where('activityLog.status = :status', {
+          status: ActivityLogStatus.Approved,
+        })
+        .andWhere('activityLog.appointmentId = :appointmentId', {
+          appointmentId,
+        })
+        .getMany();
+
+      const { startDate, endDate } = appointment;
+
+      const today = new Date();
+      const weeksDifference = differenceInWeeks(today, startDate);
+      const appointmentDuration = getHourDifference(startDate, endDate);
+      let payForCompletedRecurringAppointment: number;
+
+      if (weeksDifference >= 1) {
+        payForCompletedRecurringAppointment =
+          acceptedActivityLogs.length *
+            caregiverInfo.hourlyRate *
+            appointmentDuration -
+          caregiverInfo.hourlyRate;
+      } else {
+        payForCompletedRecurringAppointment =
+          acceptedActivityLogs.length *
+          caregiverInfo.hourlyRate *
+          appointmentDuration;
+      }
+
+      const seekerUpdatedBalance =
+        seeker.balance - payForCompletedRecurringAppointment;
+
+      await this.userService.updateWithTransaction(
+        seeker.email,
+        {
+          balance: seekerUpdatedBalance,
+        },
+        transactionalEntityManager,
+      );
+
+      const caregiverUpdatedBalance =
+        caregiverInfo.user.balance + payForCompletedRecurringAppointment;
+
+      await this.userService.updateWithTransaction(
+        caregiverInfo.user.email,
+        {
+          balance: caregiverUpdatedBalance,
+        },
+        transactionalEntityManager,
+      );
+    } catch (error) {
+      if (
+        error instanceof HttpException &&
+        error.getStatus() === HttpStatus.BAD_REQUEST
+      ) {
+        throw error;
+      }
+
+      throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   public async chargeRecurringPaymentTask(
     appointmentId: string,
   ): Promise<void> {
-    // Создание задачи для регулярных платежей
-    // const activityLogs = await this.activityLogRepository.findOne({
-    //   where: {
-    //     status: 'confirmed' || 'rejected',
-    //     appointmentId,
-    //     timestamp: {
-    //       $gte: startOfCurrentWeek,
-    //       $lte: endOfCurrentWeek,
-    //     },
-    //   },
-    // });
-    // activityLogs.forEach();
+    const appointment = await this.findAppointmentById(appointmentId);
 
-    // const appointment = await this.findAppointmentById(appointmentId);
-    // if (JSON.parse(appointment.weekday).length() === activityLogs.length()) {
-    // }
+    const dayName = format(getDay(new Date()), 'EEEE');
+    if (dayName === JSON.parse(appointment.weekday)[0]) {
+      const activityLogs = await this.activityLogRepository
+        .createQueryBuilder('activityLog')
+        .where('activityLog.status IN (:...statuses)', {
+          statuses: [ActivityLogStatus.Approved, ActivityLogStatus.Rejected],
+        })
+        .andWhere('activityLog.appointmentId = :appointmentId', {
+          appointmentId,
+        })
+        .getMany();
 
-    console.log(`You were charged, ${appointmentId}`);
+      if (JSON.parse(appointment.weekday).length === activityLogs.length) {
+        await this.chargeForRecurringAppointment(appointmentId);
+      } else if (new Date() === appointment.endDate) {
+        await this.chargeForRecurringAppointment(appointmentId);
+        await this.appointmentRepository.update(
+          { id: appointmentId },
+          { status: AppointmentStatus.Finished },
+        );
+      }
+    }
   }
 
   public async chargeForOneTimeAppointment(
     appointmentId: string,
   ): Promise<void> {
-    const appointment = await this.findAppointmentById(appointmentId);
-    console.log(appointment);
     try {
       await this.appointmentRepository.manager.transaction(
         async (transactionalEntityManager) => {
-          await this.payForCompletedAppointment(
+          await this.payForCompletedOneTimeAppointment(
             appointmentId,
             transactionalEntityManager,
+          );
+          await this.appointmentRepository.update(
+            { id: appointmentId },
+            { status: AppointmentStatus.Finished },
           );
         },
       );
     } catch (error) {
-      throw new Error(error);
+      if (
+        error instanceof HttpException &&
+        error.getStatus() === HttpStatus.BAD_REQUEST
+      ) {
+        throw error;
+      }
+
+      throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
-    console.log(`Charged for one time appointment`);
+  }
+
+  public async chargeForRecurringAppointment(
+    appointmentId: string,
+  ): Promise<void> {
+    try {
+      await this.appointmentRepository.manager.transaction(
+        async (transactionalEntityManager) => {
+          await this.payForCompletedRecurringAppointment(
+            appointmentId,
+            transactionalEntityManager,
+          );
+          await this.activityLogRepository.update(
+            { appointmentId, status: ActivityLogStatus.Approved },
+            { status: ActivityLogStatus.Closed },
+          );
+        },
+      );
+    } catch (error) {
+      if (
+        error instanceof HttpException &&
+        error.getStatus() === HttpStatus.BAD_REQUEST
+      ) {
+        throw error;
+      }
+
+      throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 }

@@ -440,19 +440,27 @@ export class AppointmentService {
     }
   }
 
-  @Cron(CronExpression.EVERY_10_SECONDS) // Запуск проверки каждые 10 минут
+  @Cron(CronExpression.EVERY_10_MINUTES)
   async checkAppointmentStatusAndCharge(): Promise<void> {
-    const appointments = await this.appointmentRepository.find({
-      where: { status: AppointmentStatus.Completed },
-    });
-    console.log(appointments);
+    const appointments = await this.appointmentRepository
+      .createQueryBuilder('appointment')
+      .where('appointment.status = :completed', {
+        completed: AppointmentStatus.Completed,
+      })
+      .orWhere(
+        '(appointment.status = :active AND appointment.type = :recurring)',
+        {
+          active: AppointmentStatus.Active,
+          recurring: TypeOfAppointment.Recurring,
+        },
+      )
+      .andWhere('appointment.startDate <= :now', { now: new Date() })
+      .getMany();
 
     appointments.forEach(async (appointment) => {
       if (appointment.type === TypeOfAppointment.OneTime) {
-        // Ваша логика для списания денег одноразово
         await this.paymentService.chargeForOneTimeAppointment(appointment.id);
       } else if (appointment.type === TypeOfAppointment.Recurring) {
-        // Ваша логика для повторного списания денег
         this.paymentService.chargeRecurringPaymentTask(appointment.id);
       }
     });
