@@ -461,7 +461,7 @@ export class AppointmentService {
       if (appointment.type === TypeOfAppointment.OneTime) {
         await this.paymentService.chargeForOneTimeAppointment(appointment.id);
       } else if (appointment.type === TypeOfAppointment.Recurring) {
-        this.paymentService.chargeRecurringPaymentTask(appointment.id);
+        await this.paymentService.chargeRecurringPaymentTask(appointment.id);
       }
     });
   }

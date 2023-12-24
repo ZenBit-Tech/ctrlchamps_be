@@ -1,4 +1,12 @@
-import { Controller, Post, Body, HttpStatus, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpStatus,
+  UseGuards,
+  Patch,
+  Param,
+} from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { ApiPath } from 'src/common/enums/api-path.enum';
@@ -8,6 +16,7 @@ import { TokenGuard } from 'src/modules/auth/middleware/auth.middleware';
 
 import { ActivityLogService } from './activity-log.service';
 import { CreateActivityLogDto } from './dto/create-activity-log.dto';
+import { UpdateActivityLogDto } from './dto/update-activity-log.dto';
 
 @ApiTags('Activity Log')
 @UseGuards(TokenGuard)
@@ -15,7 +24,7 @@ import { CreateActivityLogDto } from './dto/create-activity-log.dto';
 export class ActivityLogController {
   constructor(private readonly activityLogService: ActivityLogService) {}
 
-  @ApiOperation({ summary: 'Appointment creating' })
+  @ApiOperation({ summary: 'ActivityLogs creating' })
   @ApiResponse({
     status: HttpStatus.CREATED,
     description: 'ActivityLogs was created successfully',
@@ -29,5 +38,25 @@ export class ActivityLogController {
     @Body() createActivityLogDto: CreateActivityLogDto,
   ): Promise<void> {
     await this.activityLogService.create(createActivityLogDto);
+  }
+
+  @ApiOperation({ summary: 'Update ActivityLog status' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'ActivityLogs was created successfully',
+  })
+  @ApiResponse({
+    status: HttpStatus.NOT_FOUND,
+    description: ErrorMessage.FailedUpdateActivityLogStatus,
+  })
+  @Patch(ActivityLogApiPath.SingleAppointment)
+  async updateStatusActivityLog(
+    @Param('activityLogId') activityLogId: string,
+    @Body() updateActivityLogDto: UpdateActivityLogDto,
+  ): Promise<void> {
+    await this.activityLogService.updateStatusActivityLog(
+      activityLogId,
+      updateActivityLogDto,
+    );
   }
 }

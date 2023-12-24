@@ -245,29 +245,40 @@ export class PaymentService {
   public async chargeRecurringPaymentTask(
     appointmentId: string,
   ): Promise<void> {
-    const appointment = await this.findAppointmentById(appointmentId);
+    try {
+      const appointment = await this.findAppointmentById(appointmentId);
 
-    const dayName = format(getDay(new Date()), 'EEEE');
-    if (dayName === JSON.parse(appointment.weekday)[0]) {
-      const activityLogs = await this.activityLogRepository
-        .createQueryBuilder('activityLog')
-        .where('activityLog.status IN (:...statuses)', {
-          statuses: [ActivityLogStatus.Approved, ActivityLogStatus.Rejected],
-        })
-        .andWhere('activityLog.appointmentId = :appointmentId', {
-          appointmentId,
-        })
-        .getMany();
+      const dayName = format(getDay(new Date()), 'EEEE');
+      if (dayName === JSON.parse(appointment.weekday)[0]) {
+        const activityLogs = await this.activityLogRepository
+          .createQueryBuilder('activityLog')
+          .where('activityLog.status IN (:...statuses)', {
+            statuses: [ActivityLogStatus.Approved, ActivityLogStatus.Rejected],
+          })
+          .andWhere('activityLog.appointmentId = :appointmentId', {
+            appointmentId,
+          })
+          .getMany();
 
-      if (JSON.parse(appointment.weekday).length === activityLogs.length) {
-        await this.chargeForRecurringAppointment(appointmentId);
-      } else if (new Date() === appointment.endDate) {
-        await this.chargeForRecurringAppointment(appointmentId);
-        await this.appointmentRepository.update(
-          { id: appointmentId },
-          { status: AppointmentStatus.Finished },
-        );
+        if (JSON.parse(appointment.weekday).length === activityLogs.length) {
+          await this.chargeForRecurringAppointment(appointmentId);
+        } else if (new Date() === appointment.endDate) {
+          await this.chargeForRecurringAppointment(appointmentId);
+          await this.appointmentRepository.update(
+            { id: appointmentId },
+            { status: AppointmentStatus.Finished },
+          );
+        }
       }
+    } catch (error) {
+      if (
+        error instanceof HttpException &&
+        error.getStatus() === HttpStatus.BAD_REQUEST
+      ) {
+        throw error;
+      }
+
+      throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -299,7 +310,7 @@ export class PaymentService {
     }
   }
 
-  public async chargeForRecurringAppointment(
+  private async chargeForRecurringAppointment(
     appointmentId: string,
   ): Promise<void> {
     try {
