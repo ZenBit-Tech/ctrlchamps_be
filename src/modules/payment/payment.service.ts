@@ -93,7 +93,10 @@ export class PaymentService {
       const appointment = await this.findAppointmentById(appointmentId);
 
       if (!appointment) {
-        throw new HttpException('Appointment not found', HttpStatus.NOT_FOUND);
+        throw new HttpException(
+          ErrorMessage.AppointmentNotFound,
+          HttpStatus.NOT_FOUND,
+        );
       }
 
       const { startDate, endDate } = appointment;
@@ -160,7 +163,10 @@ export class PaymentService {
       const appointment = await this.findAppointmentById(appointmentId);
 
       if (!appointment) {
-        throw new HttpException('Appointment not found', HttpStatus.NOT_FOUND);
+        throw new HttpException(
+          ErrorMessage.AppointmentNotFound,
+          HttpStatus.NOT_FOUND,
+        );
       }
 
       const { caregiverInfoId } = appointment;
