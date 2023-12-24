@@ -31,6 +31,7 @@ import { Certificate } from './common/entities/certificate.entity';
 import { User } from './common/entities/user.entity';
 import { VirtualAssessment } from './common/entities/virtual-assessment.entity';
 import { WorkExperience } from './common/entities/work-experience.entity';
+import { CronModule } from './modules/cron/cron.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { EmailModule } from './modules/email/email.module';
 import { PaymentModule } from './modules/payment/payment.module';
@@ -88,6 +89,7 @@ import { VirtualAssessmentModule } from './modules/virtual-assessment/virtual-as
     VirtualAssessmentModule,
     PaymentModule,
     ActivityLogModule,
+    CronModule,
   ],
   controllers: [AppController],
   providers: [AppService, SeedingService],

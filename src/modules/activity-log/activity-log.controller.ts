@@ -24,10 +24,10 @@ import { UpdateActivityLogDto } from './dto/update-activity-log.dto';
 export class ActivityLogController {
   constructor(private readonly activityLogService: ActivityLogService) {}
 
-  @ApiOperation({ summary: 'ActivityLogs creating' })
+  @ApiOperation({ summary: 'Activity log creating' })
   @ApiResponse({
     status: HttpStatus.CREATED,
-    description: 'ActivityLogs was created successfully',
+    description: 'Activity log was created successfully',
   })
   @ApiResponse({
     status: HttpStatus.INTERNAL_SERVER_ERROR,
@@ -40,10 +40,10 @@ export class ActivityLogController {
     await this.activityLogService.create(createActivityLogDto);
   }
 
-  @ApiOperation({ summary: 'Update ActivityLog status' })
+  @ApiOperation({ summary: 'Update Activity log status' })
   @ApiResponse({
     status: HttpStatus.OK,
-    description: 'ActivityLogs was created successfully',
+    description: 'Activity log was updated successfully',
   })
   @ApiResponse({
     status: HttpStatus.NOT_FOUND,
