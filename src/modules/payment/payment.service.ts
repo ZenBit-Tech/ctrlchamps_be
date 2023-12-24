@@ -110,7 +110,7 @@ export class PaymentService {
 
       if (!caregiverInfo) {
         throw new HttpException(
-          'Caregiver info not found',
+          ErrorMessage.CaregiverInfoNotFound,
           HttpStatus.NOT_FOUND,
         );
       }
@@ -177,7 +177,7 @@ export class PaymentService {
 
       if (!caregiverInfo) {
         throw new HttpException(
-          'Caregiver info not found',
+          ErrorMessage.CaregiverInfoNotFound,
           HttpStatus.NOT_FOUND,
         );
       }
