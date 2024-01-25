@@ -14,7 +14,7 @@ $ npm run start:dev
 
 **Do not forget to setup configuration files (.env)**
 
-##Environmental variables
+## Environmental variables
 
 **Database**
 
@@ -101,7 +101,7 @@ These are the configurations for the AWS S3 service.
 - `AWS_SECRET_KEY`: The secret key for the AWS account.
 - `AWS_FILES_STORAGE_URL`: The URL for the AWS files storage.
 
-##Database
+## Database
 ```mermaid
 erDiagram
     activity {
